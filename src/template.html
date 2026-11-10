@@ -56,6 +56,17 @@ summary{cursor:pointer;font-size:12px;color:var(--muted);margin-bottom:10px}
 .btn:hover{filter:brightness(1.07)}
 .btn.ghost{background:none;color:var(--text);border:1px solid var(--line)}
 .btn[disabled]{opacity:.6;cursor:progress}
+.savedbox{margin-top:20px}
+.saved{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 6px}
+.saved-item{position:relative;min-width:0}
+.saved-open{display:block;width:100%;background:none;border:1px solid var(--line);border-radius:6px;padding:6px;color:var(--text);cursor:pointer;text-align:left;font:inherit}
+.saved-open:hover{border-color:var(--gold)}
+.saved-open img{display:block;width:100%;border-radius:2px;margin-bottom:5px;background:#000}
+.saved-open span{display:block;font-size:11.5px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.saved-open small{display:block;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.saved-del{position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(11,15,28,.88);color:var(--text);cursor:pointer;line-height:22px;padding:0;font-size:15px;opacity:0;transition:opacity .15s}
+.saved-item:hover .saved-del,.saved-del:focus-visible{opacity:1}
+@media (hover:none){.saved-del{opacity:1}}
 .foot{color:var(--muted);font-size:11.5px;margin-top:18px}
 .foot a{color:inherit}
 main{display:flex;align-items:center;justify-content:center;padding:34px;min-width:0;height:100vh;position:sticky;top:0;
@@ -83,7 +94,7 @@ main{display:flex;align-items:center;justify-content:center;padding:34px;min-wid
       <label><span>Local time</span><input type="time" id="time"></label>
     </div>
     <label class="place"><span>Place</span>
-      <input type="text" id="place" autocomplete="off" placeholder="Search a town or city">
+      <input type="text" id="place" autocomplete="off" placeholder="Search a town, or paste coordinates">
       <div class="results" id="results" hidden></div>
     </label>
     <p class="hint" id="placeHint"></p>
@@ -129,8 +140,14 @@ main{display:flex;align-items:center;justify-content:center;padding:34px;min-wid
     <button class="btn" id="download">Download print-ready PNG</button>
     <button class="btn ghost" id="share">Copy link to this map</button>
   </div>
+
+  <fieldset class="savedbox" id="savedBox" hidden>
+    <legend>Your maps</legend>
+    <p class="hint">Kept in this browser whenever you download a map or copy its link. Open one to remake or tweak it.</p>
+    <div class="saved" id="saved"></div>
+  </fieldset>
   <p class="foot">Stars are plotted from a real catalogue of 5,000 naked-eye stars; the Moon and planets are computed for your exact minute. North is up and east is left, as it is when you look up.<br><br>
-  Data: <a href="https://github.com/ofrohn/d3-celestial">d3-celestial</a> · Ephemeris: <a href="https://github.com/cosinekitty/astronomy">astronomy-engine</a> · Place search: <a href="https://open-meteo.com/">Open-Meteo</a></p>
+  Data: <a href="https://github.com/ofrohn/d3-celestial">d3-celestial</a> · Ephemeris: <a href="https://github.com/cosinekitty/astronomy">astronomy-engine</a> · Place search &amp; time zones: <a href="https://open-meteo.com/">Open-Meteo</a> · Names for coordinates: <a href="https://www.bigdatacloud.com/">BigDataCloud</a></p>
 </aside>
 <main><div id="stage"><canvas id="preview" aria-label="Star map poster preview"></canvas></div></main>
 </div>
@@ -441,7 +458,7 @@ async function download(){
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
       a.download = `star-map-${S.date}-${dpi}dpi.png`; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-      done = true; btn.textContent = `Saved at ${dpi} dpi`; break;
+      done = true; btn.textContent = `Saved at ${dpi} dpi`; saveCurrent(); break;
     }catch(e){ /* canvas too large for this device: try a lower resolution */ }
   }
   if (!done) btn.textContent = "Couldn't render on this device";
@@ -463,11 +480,68 @@ function loadUrl(){
     else if (k === "lat" || k === "lon"){ if (isFinite(+v)) S[k] = +v; }
     else S[k] = v.slice(0, 80);
   }
+  sanitize();
+}
+function sanitize(){
+  for (const k of BOOL) S[k] = S[k] ? 1 : 0;
+  for (const k of ["lat","lon"]) if (!isFinite(+S[k])) S[k] = DEFAULTS[k]; else S[k] = +S[k];
+  for (const k of ["title","names","label","tz"]) S[k] = String(S[k] ?? "").slice(0, 80);
   if (!THEMES[S.theme]) S.theme = DEFAULTS.theme;
   if (!SIZES[S.size]) S.size = DEFAULTS.size;
   if (!FONTS[S.font]) S.font = DEFAULTS.font;
   if (!/^\d{4}-\d\d-\d\d$/.test(S.date)) S.date = DEFAULTS.date;
   if (!/^\d\d:\d\d/.test(S.time)) S.time = DEFAULTS.time;
+}
+
+/* ---------- saved maps (this browser only) ---------- */
+const STORE = "skyThatNight.maps.v1";
+function loadSaved(){ try{ const a = JSON.parse(localStorage.getItem(STORE) || "[]"); return Array.isArray(a) ? a.filter(m => m && m.s) : []; }catch(e){ return []; } }
+function writeSaved(a){ try{ localStorage.setItem(STORE, JSON.stringify(a)); return true; }catch(e){ return false; } }
+function snapshot(){ const s = {}; for (const k of Object.keys(DEFAULTS)) s[k] = S[k]; return s; }
+function saveCurrent(){
+  if (!sky) return;
+  const s = snapshot(), key = JSON.stringify(s), sz = SIZES[S.size] || SIZES["18x24"];
+  let thumb = "";
+  try{
+    const c = document.createElement("canvas"); c.width = 240; c.height = Math.round(240*sz.h/sz.w);
+    drawPoster(c.getContext("2d"), c.width, c.height, sky); thumb = c.toDataURL("image/jpeg", .74);
+  }catch(e){}
+  let list = loadSaved().filter(m => JSON.stringify(m.s) !== key);
+  list.unshift({id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), s, thumb, at: Date.now()});
+  list = list.slice(0, 30);
+  while (!writeSaved(list) && list.length > 1) list.pop();   // storage full: drop the oldest
+  renderSaved();
+}
+function renderSaved(){
+  const list = loadSaved(), box = $("saved");
+  $("savedBox").hidden = !list.length; box.innerHTML = "";
+  for (const m of list){
+    const s = m.s, item = document.createElement("div"); item.className = "saved-item";
+    const open = document.createElement("button"); open.type = "button"; open.className = "saved-open";
+    open.title = "Open this map to remake or tweak it";
+    if (m.thumb){ const img = document.createElement("img"); img.src = m.thumb; img.alt = ""; open.appendChild(img); }
+    const name = document.createElement("span"); name.textContent = s.title || s.names || "Untitled map";
+    let when = s.date;
+    try{ when = new Date(s.date + "T12:00:00Z").toLocaleDateString("en-GB", {day:"numeric", month:"short", year:"numeric", timeZone:"UTC"}); }catch(e){}
+    const sub = document.createElement("small"); sub.textContent = [when, s.label].filter(Boolean).join(" · ");
+    open.append(name, sub);
+    open.onclick = () => {
+      Object.assign(S, DEFAULTS, s); sanitize(); syncControls();
+      $("placeHint").textContent = ""; $("placeHint").className = "hint";
+      queue();
+      if (matchMedia("(max-width:860px)").matches) scrollTo({top: 0, behavior: "smooth"});
+    };
+    const del = document.createElement("button"); del.type = "button"; del.className = "saved-del";
+    del.textContent = "×"; del.setAttribute("aria-label", "Remove " + name.textContent + " from your maps");
+    del.onclick = () => { writeSaved(loadSaved().filter(x => x.id !== m.id)); renderSaved(); };
+    item.append(open, del); box.appendChild(item);
+  }
+}
+function syncControls(){
+  for (const k of TEXT) $(k).value = S[k];
+  for (const k of BOOL) $(k).checked = !!S[k];
+  $("lat").value = S.lat; $("lon").value = S.lon; $("place").value = S.label;
+  paintThemes();
 }
 
 /* ---------- controls ---------- */
@@ -490,13 +564,99 @@ function initUi(){
   $("place").value = S.label;
   paintThemes();
   $("download").onclick = download;
-  $("share").onclick = async () => { const b = $("share"), o = b.textContent;
+  $("share").onclick = async () => { const b = $("share"), o = b.textContent; saveCurrent();
     try{ await navigator.clipboard.writeText(location.href); b.textContent = "Link copied"; }catch(e){ b.textContent = "Copy the address bar link"; }
     setTimeout(() => b.textContent = o, 1800); };
   initSearch();
+  renderSaved();
   addEventListener("resize", queue);
 }
 function paintThemes(){ for (const b of $("themes").children) b.setAttribute("aria-pressed", b.dataset.theme === S.theme); }
+
+/* ---------- pasted coordinates ---------- */
+// Accepts "25.2048, 55.2708", "25.2048 N 55.2708 E", 25°12'17.3"N 55°16'14.9"E, 33° 55' S, 18° 25' E,
+// and Google Maps / Apple Maps / OpenStreetMap / geo: links. Returns {lat, lon}, {error:"link"} or null.
+function parseCoords(raw){
+  let s = String(raw || "").trim(), m;
+  if (!s || s.length > 600 || !/\d/.test(s) && !/^https?:/i.test(s)) return null;
+  const pair = (a, b) => { const lat = +a, lon = +b; return Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? {lat, lon} : null; };
+  if (/^(https?:|geo:)/i.test(s) || /(^|\.)(google|maps\.apple|openstreetmap)\./i.test(s)){
+    try{ s = decodeURIComponent(s); }catch(e){}
+    const N = "(-?\\d+(?:\\.\\d+)?)";
+    for (const re of [new RegExp(`!3d${N}!4d${N}`), new RegExp(`@${N},\\s*${N}`),
+                      new RegExp(`[?&](?:q|query|ll|sll|center|destination|daddr)=(?:loc:)?\\s*${N}\\s*,\\s*${N}`, "i"),
+                      new RegExp(`mlat=${N}&mlon=${N}`, "i"), new RegExp(`#map=[\\d.]+/${N}/${N}`), new RegExp(`^geo:${N},${N}`, "i")])
+      if ((m = s.match(re))) return pair(m[1], m[2]);
+    return /^https?:/i.test(s) ? {error:"link"} : null;
+  }
+  const u = s.toUpperCase().replace(/LATITUDE|LONGITUDE|LAT|LONG|LNG|LON|DEGREES|DEG/g, " ")
+    .replace(/NORTH/g, "N").replace(/SOUTH/g, "S").replace(/EAST/g, "E").replace(/WEST/g, "W");
+  if (/[A-DF-MO-RT-VX-Z]/.test(u)) return null;          // other letters: it's a place name
+  const toks = u.match(/[-+]?\d+(?:\.\d+)?|[°º˚]|''|['′’]|["″”]|[NSEW]|[,;]/g) || [];
+  const comps = []; let cur = null, prev = null;
+  const start = h => { cur = {n:[], neg:false, h:h || null, closed:false}; comps.push(cur); };
+  for (const k of toks){
+    if (/\d/.test(k)){
+      const unitPrev = prev && /[°º˚'′’"″”]/.test(prev);
+      const joins = cur && !cur.closed && (!cur.n.length || (unitPrev && cur.n.length < 3));
+      if (!joins) start();
+      if (k[0] === "-"){ if (cur.n.length) return null; cur.neg = true; }
+      cur.n.push(Math.abs(parseFloat(k)));
+    } else if (/[NSEW]/.test(k)){
+      if (cur && !cur.closed && cur.n.length && !cur.h){ cur.h = k; cur.closed = true; }
+      else start(k);
+    } else if (/[,;]/.test(k)){ if (cur) cur.closed = true; }
+    prev = k;
+  }
+  if (comps.length !== 2) return null;
+  let [a, b] = comps;
+  if ((a.h && "EW".includes(a.h)) || (b.h && "NS".includes(b.h))) [a, b] = [b, a];
+  if ((a.h && !"NS".includes(a.h)) || (b.h && !"EW".includes(b.h))) return null;
+  const val = c => {
+    if (!c.n.length || c.n.slice(1).some(v => v >= 60)) return NaN;
+    const v = c.n[0] + (c.n[1] || 0)/60 + (c.n[2] || 0)/3600;
+    return (c.neg || c.h === "S" || c.h === "W") ? -v : v;
+  };
+  return pair(val(a), val(b));
+}
+function fmtCoords(lat, lon){
+  const f = (v, pos, neg) => `${Math.abs(v).toFixed(4)}° ${v >= 0 ? pos : neg}`;
+  return `${f(lat, "N", "S")}, ${f(lon, "E", "W")}`;
+}
+let coordSeq = 0;
+async function applyCoords(c, query){
+  const mine = ++coordSeq, input = $("place"), hint = $("placeHint");
+  S.lat = +c.lat.toFixed(4); S.lon = +c.lon.toFixed(4);
+  $("lat").value = S.lat; $("lon").value = S.lon;
+  hint.className = "hint"; hint.textContent = `Using ${fmtCoords(S.lat, S.lon)} — finding the time zone…`;
+  queue();
+  const q = `latitude=${S.lat}&longitude=${S.lon}`;
+  const get = url => fetch(url).then(r => r.ok ? r.json() : Promise.reject(r.status));
+  const [tzR, geoR] = await Promise.allSettled([
+    get(`https://api.open-meteo.com/v1/forecast?${q}&timezone=auto&forecast_days=1`),
+    get(`https://api.bigdatacloud.net/data/reverse-geocode-client?${q}&localityLanguage=en`)]);
+  if (mine !== coordSeq) return;
+  let tz = tzR.status === "fulfilled" && tzR.value && tzR.value.timezone, estimated = false;
+  if (!validTz(tz)){   // fall back to a whole-hour zone from longitude (Etc/ zones have inverted signs)
+    const o = Math.max(-12, Math.min(12, Math.round(S.lon/15)));
+    tz = o ? `Etc/GMT${o > 0 ? "-" : "+"}${Math.abs(o)}` : "Etc/GMT"; estimated = true;
+  }
+  S.tz = tz; $("tz").value = tz;
+  let name = "";
+  if (geoR.status === "fulfilled" && geoR.value){ const g = geoR.value; name = [g.city || g.locality, g.countryName].filter(Boolean).join(", "); }
+  S.label = name; $("label").value = name;
+  if (name && input.value.trim() === query) input.value = name;
+  const where = name ? `${name} (${fmtCoords(S.lat, S.lon)})` : fmtCoords(S.lat, S.lon);
+  if (estimated){
+    const o = Math.round(S.lon/15);
+    hint.className = "hint warn";
+    hint.textContent = `Set to ${where}. Couldn't look up the time zone, so it's estimated as UTC${o >= 0 ? "+" : "−"}${Math.abs(o)} — check it under “Enter coordinates by hand”.`;
+    $("adv").open = true;
+  } else {
+    hint.textContent = `Set to ${where} · time zone ${tz}.` + (name ? "" : " Add a place name under The words if you want one printed.");
+  }
+  queue();
+}
 
 function initSearch(){
   const input = $("place"), box = $("results"), hint = $("placeHint");
@@ -505,6 +665,10 @@ function initSearch(){
   input.addEventListener("input", () => {
     clearTimeout(timer); const q = input.value.trim();
     if (q.length < 2){ close(); return; }
+    const c = parseCoords(q);
+    if (c && c.error){ ++seq; close(); hint.className = "hint warn";
+      hint.textContent = "That link doesn't include coordinates (short links can't be read). Open it, then copy the coordinates or the full address-bar link."; return; }
+    if (c){ ++seq; close(); timer = setTimeout(() => applyCoords(c, q), 250); return; }
     timer = setTimeout(async () => {
       const mine = ++seq;
       try{
@@ -519,6 +683,7 @@ function initSearch(){
           const region = [p.admin1, p.country].filter(Boolean).join(", ");
           b.append(p.name + " "); const sm = document.createElement("small"); sm.textContent = region; b.append(sm);
           b.onclick = () => {
+            ++coordSeq;
             S.lat = +p.latitude.toFixed(4); S.lon = +p.longitude.toFixed(4);
             if (validTz(p.timezone)) S.tz = p.timezone;
             S.label = [p.name, p.country].filter(Boolean).join(", ");

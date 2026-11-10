@@ -12,9 +12,11 @@ Everything is in `index.html` — no build step, no server, no API keys.
 - ~5,000 naked-eye stars, constellation lines and Milky Way outlines from [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD-3-Clause), embedded in the page.
 - Moon (with phase) and planets from [astronomy-engine](https://github.com/cosinekitty/astronomy) (MIT), embedded.
 - Stereographic projection centred on the zenith; north up, east left. Star positions are precessed to the chosen date, so historic skies are right too.
-- Place search uses the free [Open-Meteo geocoding API](https://open-meteo.com/en/docs/geocoding-api) (non-commercial use; coordinates can also be typed in by hand).
+- Place search uses the free [Open-Meteo geocoding API](https://open-meteo.com/en/docs/geocoding-api) (non-commercial use).
+- The place box also accepts pasted coordinates — decimal, degrees/minutes/seconds, or a Google Maps / Apple Maps / OpenStreetMap link. The time zone comes from Open-Meteo and the place name from [BigDataCloud](https://www.bigdatacloud.com/free-api/free-reverse-geocode-to-city-api)'s free client-side reverse geocoder; if either is unreachable the time zone is estimated from longitude.
 - Fonts: Cormorant Garamond, Playfair Display, Great Vibes and Jost (SIL OFL), embedded.
 - Settings live in the URL, so any map can be shared as a link.
+- "Your maps": every map you download or copy a link to is kept in the browser (localStorage, with a small thumbnail), so it can be reopened, tweaked and downloaded again. Nothing is sent anywhere.
 
 ## Editing
 `index.html` is generated: the readable source is `src/template.html`, and `src/build.py` inlines the data, library and fonts into it.
