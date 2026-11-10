@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Sky That Night — free custom star map prints</title>
+<meta name="description" content="Make a free, print-ready star map of the night sky exactly as it looked at any moment and place — a wedding, a birth, a first date.">
+<!--
+  The Sky That Night — a single-file star map poster maker. No build step, no server.
+  Bundled third-party work:
+   - Star, constellation and Milky Way data: d3-celestial by Olaf Frohn (BSD-3-Clause)
+   - Planet / Moon positions: astronomy-engine by Don Cross (MIT)
+   - Fonts: Cormorant Garamond, Playfair Display, Great Vibes and Jost (SIL Open Font License)
+-->
+<style>
+@font-face{font-family:"Cormorant Garamond";font-weight:500;font-style:normal;src:url(data:font/woff2;base64,{{F_SERIF}}) format("woff2")}
+@font-face{font-family:"Cormorant Garamond";font-weight:500;font-style:italic;src:url(data:font/woff2;base64,{{F_SERIF_I}}) format("woff2")}
+@font-face{font-family:"Playfair Display";font-weight:500;font-style:normal;src:url(data:font/woff2;base64,{{F_PLAYFAIR}}) format("woff2")}
+@font-face{font-family:"Great Vibes";font-weight:400;font-style:normal;src:url(data:font/woff2;base64,{{F_SCRIPT}}) format("woff2")}
+@font-face{font-family:"Jost";font-weight:400;font-style:normal;src:url(data:font/woff2;base64,{{F_SANS}}) format("woff2")}
+:root{--bg:#0b0f1c;--panel:#111729;--line:#232c45;--text:#ece6d8;--muted:#8f97ad;--gold:#d8b879;--field:#0c1222}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font:15px/1.45 "Jost",system-ui,sans-serif}
+.app{display:grid;grid-template-columns:390px 1fr;min-height:100vh}
+aside{background:var(--panel);border-right:1px solid var(--line);padding:26px 24px 30px;overflow-y:auto;max-height:100vh}
+h1{font:500 30px/1.05 "Cormorant Garamond",Georgia,serif;margin:0 0 6px;letter-spacing:.01em}
+h1 em{color:var(--gold)}
+.lede{color:var(--muted);margin:0 0 22px;font-size:14px}
+fieldset{border:0;border-top:1px solid var(--line);margin:0;padding:18px 0 6px}
+legend{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);padding:0 10px 0 0}
+label{display:block;font-size:12px;color:var(--muted);margin:0 0 12px}
+label>span{display:block;margin-bottom:5px}
+input[type=text],input[type=date],input[type=time],input[type=number],select{width:100%;background:var(--field);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:9px 10px;font:inherit;color-scheme:dark}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.place{position:relative}
+.results{position:absolute;z-index:5;left:0;right:0;top:100%;margin-top:4px;background:#172038;border:1px solid var(--line);border-radius:6px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.5)}
+.results button{display:block;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);color:var(--text);padding:9px 11px;font:inherit;cursor:pointer}
+.results button:last-child{border-bottom:0}
+.results button:hover,.results button:focus{background:#202b4a}
+.results small{color:var(--muted)}
+.hint{font-size:12px;color:var(--muted);margin:-4px 0 12px}
+.hint.warn{color:#e3a17a}
+details{margin:0 0 12px}
+summary{cursor:pointer;font-size:12px;color:var(--muted);margin-bottom:10px}
+.themes{display:flex;gap:9px;flex-wrap:wrap;margin:0 0 14px}
+.themes button{width:42px;height:42px;border-radius:50%;border:2px solid var(--line);cursor:pointer;padding:0;position:relative;overflow:hidden}
+.themes button::after{content:"";position:absolute;inset:9px;border-radius:50%;background:var(--sky);box-shadow:0 0 0 1px var(--ring)}
+.themes button[aria-pressed=true]{border-color:var(--gold)}
+.checks{display:grid;grid-template-columns:1fr 1fr;gap:7px 10px;margin:0 0 14px}
+.checks label{display:flex;align-items:center;gap:8px;margin:0;color:var(--text);font-size:13.5px;cursor:pointer}
+.checks input{accent-color:var(--gold);width:15px;height:15px;margin:0}
+.actions{border-top:1px solid var(--line);padding-top:18px;display:grid;gap:10px}
+.btn{background:var(--gold);color:#1b1407;border:0;border-radius:6px;padding:12px 14px;font:inherit;font-weight:400;letter-spacing:.06em;cursor:pointer}
+.btn:hover{filter:brightness(1.07)}
+.btn.ghost{background:none;color:var(--text);border:1px solid var(--line)}
+.btn[disabled]{opacity:.6;cursor:progress}
+.foot{color:var(--muted);font-size:11.5px;margin-top:18px}
+.foot a{color:inherit}
+main{display:flex;align-items:center;justify-content:center;padding:34px;min-width:0;height:100vh;position:sticky;top:0;
+  background:radial-gradient(ellipse at 50% 40%,#1a2135 0%,#0b0f1c 70%)}
+#stage{display:flex;align-items:center;justify-content:center;width:100%;height:100%}
+#preview{display:block;box-shadow:0 30px 80px rgba(0,0,0,.6),0 2px 6px rgba(0,0,0,.5)}
+@media (max-width:860px){
+  .app{grid-template-columns:1fr}
+  main{height:auto;position:static;padding:18px;order:-1}
+  #stage{height:auto}
+  aside{max-height:none;border-right:0}
+}
+</style>
+</head>
+<body>
+<div class="app">
+<aside>
+  <h1>The Sky <em>That Night</em></h1>
+  <p class="lede">The stars exactly as they stood over one moment and one place. Make it, download it, print it — free.</p>
+
+  <fieldset>
+    <legend>The moment</legend>
+    <div class="row">
+      <label><span>Date</span><input type="date" id="date"></label>
+      <label><span>Local time</span><input type="time" id="time"></label>
+    </div>
+    <label class="place"><span>Place</span>
+      <input type="text" id="place" autocomplete="off" placeholder="Search a town or city">
+      <div class="results" id="results" hidden></div>
+    </label>
+    <p class="hint" id="placeHint"></p>
+    <details id="adv">
+      <summary>Enter coordinates by hand</summary>
+      <div class="row">
+        <label><span>Latitude (°, north +)</span><input type="number" id="lat" step="0.0001" min="-90" max="90"></label>
+        <label><span>Longitude (°, east +)</span><input type="number" id="lon" step="0.0001" min="-180" max="180"></label>
+      </div>
+      <label><span>Time zone</span><input type="text" id="tz" list="tzlist" spellcheck="false"><datalist id="tzlist"></datalist></label>
+    </details>
+  </fieldset>
+
+  <fieldset>
+    <legend>The words</legend>
+    <label><span>Headline</span><input type="text" id="title" maxlength="60"></label>
+    <label><span>Headline style</span><select id="font"></select></label>
+    <label><span>Names or second line</span><input type="text" id="names" maxlength="60"></label>
+    <label><span>Place as printed</span><input type="text" id="label" maxlength="60"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>The look</legend>
+    <div class="themes" id="themes" role="group" aria-label="Colour theme"></div>
+    <div class="checks">
+      <label><input type="checkbox" id="lines">Constellations</label>
+      <label><input type="checkbox" id="cnames">Constellation names</label>
+      <label><input type="checkbox" id="mw">Milky Way</label>
+      <label><input type="checkbox" id="planets">Moon &amp; planets</label>
+      <label><input type="checkbox" id="grid">Celestial grid</label>
+      <label><input type="checkbox" id="compass">Compass points</label>
+      <label><input type="checkbox" id="frame">Border</label>
+      <label><input type="checkbox" id="coords">Coordinates</label>
+    </div>
+    <div class="row">
+      <label><span>Stars</span><select id="density">
+        <option value="4.6">Brightest only</option><option value="5.6">Balanced</option><option value="6.6">Every visible star</option></select></label>
+      <label><span>Print size</span><select id="size"></select></label>
+    </div>
+  </fieldset>
+
+  <div class="actions">
+    <button class="btn" id="download">Download print-ready PNG</button>
+    <button class="btn ghost" id="share">Copy link to this map</button>
+  </div>
+  <p class="foot">Stars are plotted from a real catalogue of 5,000 naked-eye stars; the Moon and planets are computed for your exact minute. North is up and east is left, as it is when you look up.<br><br>
+  Data: <a href="https://github.com/ofrohn/d3-celestial">d3-celestial</a> · Ephemeris: <a href="https://github.com/cosinekitty/astronomy">astronomy-engine</a> · Place search: <a href="https://open-meteo.com/">Open-Meteo</a></p>
+</aside>
+<main><div id="stage"><canvas id="preview" aria-label="Star map poster preview"></canvas></div></main>
+</div>
+
+<script>{{ASTRO}}</script>
+<script>
+"use strict";
+/* ---------- data ---------- */
+const STARS = {{STARS}};            // flat: ra*100, dec*100, mag*10, (B-V)*10   (J2000, degrees)
+const LINES = {{LINES}};            // polylines, flat ra*100, dec*100
+const CNAMES = {{NAMES}};           // [name, ra, dec]
+const MW = "{{MW}}", MW_W = {{MW_W}}, MW_H = {{MW_H}};   // Milky Way brightness 0-9 on an RA/Dec grid
+
+const THEMES = {
+  midnight:{name:"Midnight", paper:"#0e1a33", sky:"#0e1a33", ink:"#efe7d3", star:"#fbf6e9", accent:"#d8b879"},
+  navy:    {name:"Navy on cream", paper:"#f3eee2", sky:"#14233f", ink:"#14233f", star:"#ffffff", accent:"#14233f"},
+  noir:    {name:"Noir", paper:"#0a0a0b", sky:"#0a0a0b", ink:"#ecebe7", star:"#ffffff", accent:"#ecebe7"},
+  ivory:   {name:"Black on ivory", paper:"#f8f5ee", sky:"#121212", ink:"#161616", star:"#ffffff", accent:"#161616"},
+  forest:  {name:"Forest", paper:"#f0ece0", sky:"#1d382d", ink:"#1d382d", star:"#fbf8ee", accent:"#1d382d"},
+  plum:    {name:"Plum", paper:"#f4ebe6", sky:"#40263a", ink:"#40263a", star:"#fff6ee", accent:"#40263a"},
+};
+const SIZES = { // inches
+  "18x24":{name:"18 × 24 in", w:18, h:24}, "12x16":{name:"12 × 16 in", w:12, h:16},
+  "a3":{name:"A3", w:11.693, h:16.535}, "a2":{name:"A2", w:16.535, h:23.386},
+  "50x70":{name:"50 × 70 cm", w:19.685, h:27.559}, "sq":{name:"Square 30 cm", w:11.811, h:11.811},
+};
+const FONTS = { // headline styles; the details underneath are always Jost
+  classic:{name:"Classic — Cormorant Garamond", font:'500 {s}px "Cormorant Garamond", Georgia, serif', size:60},
+  bold:   {name:"Bold editorial — Playfair Display", font:'500 {s}px "Playfair Display", Georgia, serif', size:50},
+  script: {name:"Script — Great Vibes", font:'400 {s}px "Great Vibes", cursive', size:72},
+  modern: {name:"Modern — Jost capitals", font:'400 {s}px "Jost", "Helvetica Neue", Arial, sans-serif', size:31, caps:true, track:.3},
+};
+const DEFAULTS = {
+  date:"2024-06-14", time:"21:30", lat:43.7696, lon:11.2558, tz:"Europe/Rome",
+  title:"The night we said yes", names:"Emma & Luca", label:"Florence, Italy",
+  font:"classic", theme:"midnight", size:"18x24", density:"5.6",
+  lines:1, cnames:0, mw:1, planets:1, grid:0, compass:1, frame:1, coords:1,
+};
+const BOOL = ["lines","cnames","mw","planets","grid","compass","frame","coords"];
+const TEXT = ["date","time","tz","title","names","label","density","size","font"];
+const S = Object.assign({}, DEFAULTS);
+
+/* ---------- time ---------- */
+function tzOffset(ms, tz){
+  const f = new Intl.DateTimeFormat("en-US",{timeZone:tz,hourCycle:"h23",year:"numeric",month:"numeric",day:"numeric",hour:"numeric",minute:"numeric",second:"numeric"});
+  const p = {}; for (const x of f.formatToParts(new Date(ms))) p[x.type] = x.value;
+  return Date.UTC(+p.year, p.month-1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(ms/1000)*1000;
+}
+function validTz(tz){ try{ new Intl.DateTimeFormat("en-US",{timeZone:tz}); return !!tz; }catch(e){ return false; } }
+function momentUtc(){
+  const [y,mo,d] = S.date.split("-").map(Number), [h,mi] = S.time.split(":").map(Number);
+  const wall = Date.UTC(y, mo-1, d, h, mi);
+  const tz = validTz(S.tz) ? S.tz : "UTC";
+  let t = wall;
+  for (let i=0;i<3;i++) t = wall - tzOffset(t, tz);
+  return new Date(t);
+}
+
+/* ---------- sky ---------- */
+const D2R = Math.PI/180, R2D = 180/Math.PI;
+function buildSky(){
+  const date = momentUtc();
+  if (isNaN(date)) return null;
+  const lat = Math.max(-89.99, Math.min(89.99, +S.lat||0)), lon = +S.lon||0;
+  const lst = (((Astronomy.SiderealTime(date)*15 + lon) % 360) + 360) % 360;
+  const sl = Math.sin(lat*D2R), cl = Math.cos(lat*D2R);
+  // equatorial (deg) -> chart xy, unit circle = horizon, north up, east left
+  const eq = (ra, dec) => {
+    const H = (lst-ra)*D2R, d = dec*D2R, sd = Math.sin(d), cd = Math.cos(d), cH = Math.cos(H);
+    const alt = Math.asin(Math.max(-1, Math.min(1, sd*sl + cd*cl*cH)));
+    const az = Math.atan2(-cd*Math.sin(H), sd*cl - cd*sl*cH);
+    return hz(alt, az);
+  };
+  const hz = (alt, az) => {
+    const r = Math.tan((Math.PI/2 - Math.max(alt, -60*D2R))/2);
+    return {alt: alt*R2D, x: -r*Math.sin(az), y: -r*Math.cos(az)};
+  };
+  // chart xy -> equatorial (deg), for the Milky Way raster
+  const inv = (x, y) => {
+    const r = Math.hypot(x, y), alt = Math.PI/2 - 2*Math.atan(r), az = Math.atan2(-x, -y);
+    const sa = Math.sin(alt), ca = Math.cos(alt);
+    const dec = Math.asin(Math.max(-1, Math.min(1, sa*sl + ca*cl*Math.cos(az))));
+    const H = Math.atan2(-Math.sin(az)*ca, sa*cl - ca*sl*Math.cos(az));
+    return [lst - H*R2D, dec*R2D];
+  };
+  const obs = new Astronomy.Observer(lat, lon, 0), bodies = [];
+  let moon = null, sun = null;
+  for (const b of ["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn"]){
+    const e = Astronomy.Equator(b, date, obs, true, true);
+    const h = Astronomy.Horizon(date, obs, e.ra, e.dec);
+    const p = hz(h.altitude*D2R, h.azimuth*D2R); p.name = b;
+    if (b === "Sun") sun = p;
+    else if (b === "Moon"){ p.lit = Astronomy.Illumination("Moon", date).phase_fraction; moon = p; }
+    else { p.mag = Astronomy.Illumination(b, date).mag; bodies.push(p); }
+  }
+  return {date, lat, lon, lst, eq, inv, bodies, moon, sun, key:[lst.toFixed(3), lat].join()};
+}
+
+let mwCache = {key:"", canvas:null};
+function milkyWay(sky, color){
+  const key = sky.key + color;
+  if (mwCache.key === key) return mwCache.canvas;
+  const N = 420, c = document.createElement("canvas"); c.width = c.height = N;
+  const g = c.getContext("2d"), img = g.createImageData(N, N), px = img.data;
+  const rgb = [1,3,5].map(i => parseInt(color.slice(i, i+2), 16));
+  const at = (i, j) => MW.charCodeAt(Math.max(0, Math.min(MW_H-1, j))*MW_W + ((i % MW_W) + MW_W) % MW_W) - 48;
+  for (let j=0;j<N;j++) for (let i=0;i<N;i++){
+    const x = (i+0.5)/N*2 - 1, y = (j+0.5)/N*2 - 1;
+    if (x*x + y*y > 1.02) continue;
+    const [ra, dec] = sky.inv(x, y);
+    const u = (((ra + 180) % 360) + 360) % 360 / 360 * MW_W - 0.5, v = (dec + 90)/180*MW_H - 0.5;
+    const i0 = Math.floor(u), j0 = Math.floor(v), fu = u - i0, fv = v - j0;
+    const val = (at(i0,j0)*(1-fu) + at(i0+1,j0)*fu)*(1-fv) + (at(i0,j0+1)*(1-fu) + at(i0+1,j0+1)*fu)*fv;
+    const o = (j*N + i)*4;
+    px[o] = rgb[0]; px[o+1] = rgb[1]; px[o+2] = rgb[2]; px[o+3] = Math.round(Math.pow(val/9, 1.25)*78);
+  }
+  g.putImageData(img, 0, 0);
+  mwCache = {key, canvas:c};
+  return c;
+}
+
+/* ---------- drawing ---------- */
+const SERIF = '"Cormorant Garamond", Georgia, serif', SANS = '"Jost", "Helvetica Neue", Arial, sans-serif';
+function alpha(hex, a){ const n = [1,3,5].map(i => parseInt(hex.slice(i, i+2), 16)); return `rgba(${n[0]},${n[1]},${n[2]},${a})`; }
+function spaced(ctx, text, x, y, tracking){   // centred, letter-spaced text
+  const chars = [...text], w = chars.map(ch => ctx.measureText(ch).width);
+  const total = w.reduce((a,b) => a+b, 0) + tracking*(chars.length-1);
+  let cx = x - total/2;
+  ctx.textAlign = "left";
+  chars.forEach((ch, i) => { ctx.fillText(ch, cx, y); cx += w[i] + tracking; });
+  return total;
+}
+function spacedWidth(ctx, text, tracking){ let t = 0; for (const ch of text) t += ctx.measureText(ch).width + tracking; return t - tracking; }
+
+function detailLines(sky){
+  const tz = validTz(S.tz) ? S.tz : "UTC";
+  const d = new Intl.DateTimeFormat("en-GB",{timeZone:tz, day:"numeric", month:"long", year:"numeric"}).format(sky.date);
+  const t = new Intl.DateTimeFormat("en-US",{timeZone:tz, hour:"numeric", minute:"2-digit"}).format(sky.date);
+  const out = [`${d}  ·  ${t}`];
+  if (S.label.trim()) out.push(S.label.trim());
+  if (S.coords){
+    const f = (v, pos, neg) => `${Math.abs(v).toFixed(4)}° ${v >= 0 ? pos : neg}`;
+    out.push(`${f(sky.lat,"N","S")}   ${f(sky.lon,"E","W")}`);
+  }
+  return out.map(s => s.toUpperCase());
+}
+
+function drawPoster(ctx, W, H, sky){
+  const T = THEMES[S.theme] || THEMES.midnight, u = W/1000, same = T.paper === T.sky;
+  ctx.save();
+  ctx.fillStyle = T.paper; ctx.fillRect(0, 0, W, H);
+  if (S.frame){ ctx.strokeStyle = alpha(T.ink, .55); ctx.lineWidth = 1.2*u; const m = 34*u; ctx.strokeRect(m, m, W-2*m, H-2*m); }
+
+  // layout: chart on top, words underneath, the whole block optically centred
+  const hasTitle = !!S.title.trim(), hasNames = !!S.names.trim(), details = detailLines(sky);
+  const D = Math.min(0.78*W, 0.60*H), R = D/2;
+  const titleH = hasTitle ? 74*u : 0, namesH = hasNames ? 40*u : 0, detH = details.length*27*u + 30*u;
+  const block = D + 62*u + titleH + namesH + detH;
+  const top = Math.max(70*u, (H - block)*0.46), cx = W/2, cy = top + R;
+
+  // --- chart ---
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2*Math.PI); ctx.fillStyle = T.sky; ctx.fill(); ctx.clip();
+  const X = p => cx + p.x*R, Y = p => cy + p.y*R;
+
+  if (S.mw){ ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; ctx.drawImage(milkyWay(sky, T.star), cx-R, cy-R, D, D); }
+
+  if (S.grid){
+    ctx.strokeStyle = alpha(T.star, .13); ctx.lineWidth = .8*u;
+    const path = pts => { ctx.beginPath(); let pen = false;
+      for (const [ra, dec] of pts){ const p = sky.eq(ra, dec); if (p.alt < -25){ pen = false; continue; }
+        pen ? ctx.lineTo(X(p), Y(p)) : ctx.moveTo(X(p), Y(p)); pen = true; } ctx.stroke(); };
+    for (let dec=-60; dec<=80; dec+=20){ const a = []; for (let ra=0; ra<=360; ra+=3) a.push([ra, dec]); path(a); }
+    for (let ra=0; ra<360; ra+=30){ const a = []; for (let dec=-80; dec<=80; dec+=4) a.push([ra, dec]); path(a); }
+  }
+
+  if (S.lines){
+    ctx.strokeStyle = alpha(T.star, .42); ctx.lineWidth = 1*u; ctx.lineJoin = ctx.lineCap = "round";
+    ctx.beginPath();
+    for (const L of LINES){
+      let prev = null;
+      for (let i=0;i<L.length;i+=2){
+        const p = sky.eq(L[i]/100, L[i+1]/100);
+        if (prev && (prev.alt > 0 || p.alt > 0)){ ctx.moveTo(X(prev), Y(prev)); ctx.lineTo(X(p), Y(p)); }
+        prev = p;
+      }
+    }
+    ctx.stroke();
+  }
+
+  if (S.cnames){
+    ctx.fillStyle = alpha(T.star, .5); ctx.font = `400 ${8.5*u}px ${SANS}`; ctx.textBaseline = "middle";
+    for (const [name, ra, dec] of CNAMES){ const p = sky.eq(ra, dec); if (p.alt > 8) spaced(ctx, name.toUpperCase(), X(p), Y(p) + 12*u, 1.8*u); }
+  }
+
+  const limit = +S.density || 5.6;
+  for (let i=0;i<STARS.length;i+=4){
+    const mag = STARS[i+2]/10; if (mag > limit) continue;
+    const p = sky.eq(STARS[i]/100, STARS[i+1]/100); if (p.alt < -1) continue;
+    const r = (0.45 + 3.9*Math.pow(Math.max(0, 6.5-mag)/8, 1.7))*u;
+    if (mag < 1.6){ ctx.fillStyle = alpha(T.star, .13); ctx.beginPath(); ctx.arc(X(p), Y(p), r*2.3, 0, 2*Math.PI); ctx.fill(); }
+    ctx.fillStyle = alpha(T.star, mag > 5 ? .8 : 1);
+    ctx.beginPath(); ctx.arc(X(p), Y(p), r, 0, 2*Math.PI); ctx.fill();
+  }
+
+  if (S.planets){
+    ctx.font = `400 ${8.5*u}px ${SANS}`; ctx.textBaseline = "middle";
+    const tag = (p, name, off) => { ctx.fillStyle = alpha(T.star, .78); spaced(ctx, name.toUpperCase(), X(p), Y(p) + off, 1.8*u); };
+    for (const p of sky.bodies){
+      if (p.alt < 1) continue;
+      const r = (0.45 + 3.9*Math.pow(Math.max(0, 6.5-Math.max(p.mag, -3))/8, 1.7))*u;
+      ctx.fillStyle = T.star; ctx.beginPath(); ctx.arc(X(p), Y(p), r, 0, 2*Math.PI); ctx.fill();
+      ctx.strokeStyle = alpha(T.star, .6); ctx.lineWidth = .8*u; ctx.beginPath(); ctx.arc(X(p), Y(p), r + 3*u, 0, 2*Math.PI); ctx.stroke();
+      tag(p, p.name, r + 13*u);
+    }
+    if (sky.sun.alt > 0){
+      const p = sky.sun, r = 9*u;
+      ctx.strokeStyle = T.star; ctx.lineWidth = 1.2*u; ctx.beginPath(); ctx.arc(X(p), Y(p), r, 0, 2*Math.PI); ctx.stroke();
+      ctx.fillStyle = T.star; ctx.beginPath(); ctx.arc(X(p), Y(p), 2*u, 0, 2*Math.PI); ctx.fill();
+      tag(p, "Sun", r + 11*u);
+    }
+    if (sky.moon.alt > 0){
+      const m = sky.moon, r = 10*u, k = m.lit;
+      ctx.save(); ctx.translate(X(m), Y(m)); ctx.rotate(Math.atan2(sky.sun.y - m.y, sky.sun.x - m.x)); // lit limb faces the Sun
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, 2*Math.PI); ctx.fillStyle = T.sky; ctx.fill();
+      ctx.fillStyle = alpha(T.star, .1); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 0, r, -Math.PI/2, Math.PI/2);
+      ctx.ellipse(0, 0, Math.max(.01, Math.abs(r*(1-2*k))), r, 0, Math.PI/2, -Math.PI/2, k < .5);
+      ctx.fillStyle = T.star; ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, 2*Math.PI); ctx.strokeStyle = alpha(T.star, .55); ctx.lineWidth = .8*u; ctx.stroke();
+      ctx.restore();
+      tag(m, "Moon", r + 11*u);
+    }
+  }
+  ctx.restore();
+
+  // rings + compass
+  ctx.strokeStyle = same ? alpha(T.ink, .9) : T.sky;
+  ctx.lineWidth = 1.6*u; ctx.beginPath(); ctx.arc(cx, cy, R + (same ? 0 : 7*u), 0, 2*Math.PI); ctx.stroke();
+  if (same){ ctx.lineWidth = .8*u; ctx.strokeStyle = alpha(T.ink, .5); ctx.beginPath(); ctx.arc(cx, cy, R + 7*u, 0, 2*Math.PI); ctx.stroke(); }
+  if (S.compass){
+    ctx.fillStyle = alpha(T.ink, .8); ctx.font = `400 ${11*u}px ${SANS}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const rr = R + 23*u;
+    for (const [t, dx, dy] of [["N",0,-1],["S",0,1],["E",-1,0],["W",1,0]]) ctx.fillText(t, cx + dx*rr, cy + dy*rr + .5*u);
+  }
+
+  // --- words ---
+  let y = cy + R + 62*u;
+  ctx.fillStyle = T.ink; ctx.textBaseline = "alphabetic";
+  if (hasTitle){
+    const F = FONTS[S.font] || FONTS.classic, text = F.caps ? S.title.trim().toUpperCase() : S.title.trim(), max = 0.84*W;
+    let fs = F.size*u; const setF = () => { ctx.font = F.font.replace("{s}", fs); };
+    setF();
+    const width = () => F.track ? spacedWidth(ctx, text, fs*F.track) : ctx.measureText(text).width;
+    const tw = width(); if (tw > max){ fs *= max/tw; setF(); }
+    y += 46*u;
+    if (F.track) spaced(ctx, text, cx, y - 6*u, fs*F.track); else { ctx.textAlign = "center"; ctx.fillText(text, cx, y); }
+    y += 28*u;
+  }
+  if (hasNames){
+    let fs = 19*u, tr = 6.5*u; const t = S.names.trim().toUpperCase();
+    ctx.font = `400 ${fs}px ${SANS}`;
+    const w = spacedWidth(ctx, t, tr), max = 0.82*W;
+    if (w > max){ fs *= max/w; tr *= max/w; ctx.font = `400 ${fs}px ${SANS}`; }
+    y += 16*u; spaced(ctx, t, cx, y, tr); y += 24*u;
+  }
+  ctx.fillStyle = alpha(T.accent, .7); ctx.fillRect(cx - 22*u, y + 4*u, 44*u, 1.1*u); y += 30*u;
+  ctx.fillStyle = alpha(T.ink, .86); ctx.font = `400 ${13*u}px ${SANS}`;
+  for (const line of details){ y += 4*u; spaced(ctx, line, cx, y, 3.6*u); y += 23*u; }
+  ctx.restore();
+}
+
+/* ---------- preview + export ---------- */
+const $ = id => document.getElementById(id), canvas = $("preview");
+let sky = null, queued = false;
+function render(){
+  queued = false;
+  sky = buildSky(); if (!sky) return;
+  const sz = SIZES[S.size] || SIZES["18x24"], ar = sz.h/sz.w, box = $("stage").getBoundingClientRect();
+  const narrow = matchMedia("(max-width:860px)").matches;
+  let w = Math.min(box.width, narrow ? 560 : box.height/ar); if (!(w > 0)) w = 400;
+  const h = w*ar, dpr = Math.min(3, window.devicePixelRatio || 1);
+  canvas.style.width = w + "px"; canvas.style.height = h + "px";
+  canvas.width = Math.round(w*dpr); canvas.height = Math.round(h*dpr);
+  drawPoster(canvas.getContext("2d"), canvas.width, canvas.height, sky);
+  syncUrl();
+}
+function queue(){ if (!queued){ queued = true; requestAnimationFrame(render); } }
+
+async function download(){
+  const btn = $("download"), old = btn.textContent; btn.disabled = true; btn.textContent = "Rendering…";
+  await new Promise(r => setTimeout(r, 30));
+  const sz = SIZES[S.size] || SIZES["18x24"];
+  let done = false;
+  for (const dpi of [300, 200, 150, 100]){
+    try{
+      const c = document.createElement("canvas"); c.width = Math.round(sz.w*dpi); c.height = Math.round(sz.h*dpi);
+      const g = c.getContext("2d"); if (!g) continue;
+      drawPoster(g, c.width, c.height, sky);
+      const blob = await new Promise(r => c.toBlob(r, "image/png"));
+      if (!blob || blob.size < 2000) continue;
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+      a.download = `star-map-${S.date}-${dpi}dpi.png`; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      done = true; btn.textContent = `Saved at ${dpi} dpi`; break;
+    }catch(e){ /* canvas too large for this device: try a lower resolution */ }
+  }
+  if (!done) btn.textContent = "Couldn't render on this device";
+  setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 1800);
+}
+
+/* ---------- state <-> URL ---------- */
+function syncUrl(){
+  const q = new URLSearchParams();
+  for (const k of Object.keys(DEFAULTS)) if (String(S[k]) !== String(DEFAULTS[k])) q.set(k, S[k]);
+  const s = q.toString();
+  try{ history.replaceState(null, "", s ? "?" + s : location.pathname); }catch(e){}
+}
+function loadUrl(){
+  const q = new URLSearchParams(location.search);
+  for (const k of Object.keys(DEFAULTS)){
+    if (!q.has(k)) continue; const v = q.get(k);
+    if (BOOL.includes(k)) S[k] = v === "1" || v === "true" ? 1 : 0;
+    else if (k === "lat" || k === "lon"){ if (isFinite(+v)) S[k] = +v; }
+    else S[k] = v.slice(0, 80);
+  }
+  if (!THEMES[S.theme]) S.theme = DEFAULTS.theme;
+  if (!SIZES[S.size]) S.size = DEFAULTS.size;
+  if (!FONTS[S.font]) S.font = DEFAULTS.font;
+  if (!/^\d{4}-\d\d-\d\d$/.test(S.date)) S.date = DEFAULTS.date;
+  if (!/^\d\d:\d\d/.test(S.time)) S.time = DEFAULTS.time;
+}
+
+/* ---------- controls ---------- */
+function initUi(){
+  for (const [k, v] of Object.entries(SIZES)) $("size").add(new Option(v.name, k));
+  for (const [k, v] of Object.entries(FONTS)) $("font").add(new Option(v.name, k));
+  for (const [k, t] of Object.entries(THEMES)){
+    const b = document.createElement("button"); b.type = "button"; b.title = t.name; b.setAttribute("aria-label", t.name);
+    b.style.background = t.paper; b.style.setProperty("--sky", t.sky); b.style.setProperty("--ring", t.paper === t.sky ? t.ink : t.sky);
+    b.dataset.theme = k; b.onclick = () => { S.theme = k; paintThemes(); queue(); };
+    $("themes").appendChild(b);
+  }
+  try{ for (const z of Intl.supportedValuesOf("timeZone")) $("tzlist").appendChild(new Option(z)); }catch(e){}
+  for (const k of TEXT){ $(k).value = S[k]; $(k).addEventListener("input", e => {
+    if (k === "tz" && !validTz(e.target.value.trim())) return;
+    if ((k === "date" || k === "time") && !e.target.value) return;
+    S[k] = k === "tz" ? e.target.value.trim() : e.target.value; queue(); }); }
+  for (const k of BOOL){ $(k).checked = !!S[k]; $(k).addEventListener("change", e => { S[k] = e.target.checked ? 1 : 0; queue(); }); }
+  for (const k of ["lat","lon"]){ $(k).value = S[k]; $(k).addEventListener("input", e => { const v = parseFloat(e.target.value); if (isFinite(v)){ S[k] = v; queue(); } }); }
+  $("place").value = S.label;
+  paintThemes();
+  $("download").onclick = download;
+  $("share").onclick = async () => { const b = $("share"), o = b.textContent;
+    try{ await navigator.clipboard.writeText(location.href); b.textContent = "Link copied"; }catch(e){ b.textContent = "Copy the address bar link"; }
+    setTimeout(() => b.textContent = o, 1800); };
+  initSearch();
+  addEventListener("resize", queue);
+}
+function paintThemes(){ for (const b of $("themes").children) b.setAttribute("aria-pressed", b.dataset.theme === S.theme); }
+
+function initSearch(){
+  const input = $("place"), box = $("results"), hint = $("placeHint");
+  let timer = 0, seq = 0;
+  const close = () => { box.hidden = true; box.innerHTML = ""; };
+  input.addEventListener("input", () => {
+    clearTimeout(timer); const q = input.value.trim();
+    if (q.length < 2){ close(); return; }
+    timer = setTimeout(async () => {
+      const mine = ++seq;
+      try{
+        const r = await fetch("https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&format=json&name=" + encodeURIComponent(q));
+        if (!r.ok) throw new Error(r.status);
+        const data = await r.json(); if (mine !== seq) return;
+        box.innerHTML = ""; hint.textContent = ""; hint.className = "hint";
+        const list = data.results || [];
+        if (!list.length){ hint.textContent = "No match — try a nearby city, or enter coordinates below."; close(); return; }
+        for (const p of list){
+          const b = document.createElement("button"); b.type = "button";
+          const region = [p.admin1, p.country].filter(Boolean).join(", ");
+          b.append(p.name + " "); const sm = document.createElement("small"); sm.textContent = region; b.append(sm);
+          b.onclick = () => {
+            S.lat = +p.latitude.toFixed(4); S.lon = +p.longitude.toFixed(4);
+            if (validTz(p.timezone)) S.tz = p.timezone;
+            S.label = [p.name, p.country].filter(Boolean).join(", ");
+            input.value = S.label; $("label").value = S.label; $("lat").value = S.lat; $("lon").value = S.lon; $("tz").value = S.tz;
+            close(); queue();
+          };
+          box.appendChild(b);
+        }
+        box.hidden = false;
+      }catch(e){
+        if (mine !== seq) return; close();
+        hint.textContent = "Place search isn't reachable right now — enter coordinates and time zone below."; hint.className = "hint warn"; $("adv").open = true;
+      }
+    }, 280);
+  });
+  input.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+  document.addEventListener("click", e => { if (!e.target.closest(".place")) close(); });
+}
+
+loadUrl(); initUi(); render();
+Promise.all([`500 20px ${SERIF}`, `400 20px ${SANS}`, '500 20px "Playfair Display"', '400 20px "Great Vibes"'].map(f => document.fonts.load(f))).then(queue, queue);
+</script>
+</body>
+</html>
