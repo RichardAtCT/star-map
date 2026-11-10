@@ -198,8 +198,12 @@ function buildSky(){
   const lst = (((Astronomy.SiderealTime(date)*15 + lon) % 360) + 360) % 360;
   const sl = Math.sin(lat*D2R), cl = Math.cos(lat*D2R);
   // equatorial (deg) -> chart xy, unit circle = horizon, north up, east left
+  // the catalogue is in J2000 coordinates: precess to the equator of the chosen date
+  const P = Astronomy.Rotation_EQJ_EQD(Astronomy.MakeTime(date)).rot;
   const eq = (ra, dec) => {
-    const H = (lst-ra)*D2R, d = dec*D2R, sd = Math.sin(d), cd = Math.cos(d), cH = Math.cos(H);
+    const a = ra*D2R, d0 = dec*D2R, c0 = Math.cos(d0), vx = c0*Math.cos(a), vy = c0*Math.sin(a), vz = Math.sin(d0);
+    const px = P[0][0]*vx + P[1][0]*vy + P[2][0]*vz, py = P[0][1]*vx + P[1][1]*vy + P[2][1]*vz, sd = P[0][2]*vx + P[1][2]*vy + P[2][2]*vz;
+    const H = lst*D2R - Math.atan2(py, px), cd = Math.hypot(px, py), cH = Math.cos(H);
     const alt = Math.asin(Math.max(-1, Math.min(1, sd*sl + cd*cl*cH)));
     const az = Math.atan2(-cd*Math.sin(H), sd*cl - cd*sl*cH);
     return hz(alt, az);
@@ -214,7 +218,9 @@ function buildSky(){
     const sa = Math.sin(alt), ca = Math.cos(alt);
     const dec = Math.asin(Math.max(-1, Math.min(1, sa*sl + ca*cl*Math.cos(az))));
     const H = Math.atan2(-Math.sin(az)*ca, sa*cl - ca*sl*Math.cos(az));
-    return [lst - H*R2D, dec*R2D];
+    const a = lst*D2R - H, c = Math.cos(dec), vx = c*Math.cos(a), vy = c*Math.sin(a), vz = Math.sin(dec);   // of date -> J2000
+    const jx = P[0][0]*vx + P[0][1]*vy + P[0][2]*vz, jy = P[1][0]*vx + P[1][1]*vy + P[1][2]*vz, jz = P[2][0]*vx + P[2][1]*vy + P[2][2]*vz;
+    return [Math.atan2(jy, jx)*R2D, Math.asin(Math.max(-1, Math.min(1, jz)))*R2D];
   };
   const obs = new Astronomy.Observer(lat, lon, 0), bodies = [];
   let moon = null, sun = null;
@@ -226,7 +232,7 @@ function buildSky(){
     else if (b === "Moon"){ p.lit = Astronomy.Illumination("Moon", date).phase_fraction; moon = p; }
     else { p.mag = Astronomy.Illumination(b, date).mag; bodies.push(p); }
   }
-  return {date, lat, lon, lst, eq, inv, bodies, moon, sun, key:[lst.toFixed(3), lat].join()};
+  return {date, lat, lon, lst, eq, inv, bodies, moon, sun, key:[lst.toFixed(3), lat, date.getUTCFullYear()].join()};
 }
 
 let mwCache = {key:"", canvas:null};
